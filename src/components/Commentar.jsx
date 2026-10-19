@@ -63,20 +63,36 @@ const Comment = memo(({ comment, formatDate, index, isPinned = false }) => (
     </div>
 ));
 
+const COOLDOWN_SECONDS = 30;
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024; // 2MB — must match profile-images bucket limit
+
+const getRemainingCooldown = () => {
+    const last = Number(localStorage.getItem('lastCommentSubmittedAt') || 0);
+    return Math.max(0, Math.ceil((last + COOLDOWN_SECONDS * 1000 - Date.now()) / 1000));
+};
+
 const CommentForm = memo(({ onSubmit, isSubmitting, error }) => {
     const [newComment, setNewComment] = useState('');
     const [userName, setUserName] = useState('');
+    const [honeypot, setHoneypot] = useState('');
+    const [cooldown, setCooldown] = useState(getRemainingCooldown);
     const [imagePreview, setImagePreview] = useState(null);
     const [imageFile, setImageFile] = useState(null);
     const textareaRef = useRef(null);
     const fileInputRef = useRef(null);
 
+    useEffect(() => {
+        if (cooldown <= 0) return undefined;
+        const timer = setInterval(() => setCooldown(getRemainingCooldown()), 1000);
+        return () => clearInterval(timer);
+    }, [cooldown]);
+
     const handleImageChange = useCallback((e) => {
         const file = e.target.files[0];
         if (file) {
-            // Check file size (5MB limit)
-            if (file.size > 5 * 1024 * 1024) {
-                alert('File size must be less than 5MB. Please choose a smaller image.');
+            // Check file size (2MB limit, matches storage bucket policy)
+            if (file.size > MAX_AVATAR_SIZE) {
+                alert('File size must be less than 2MB. Please choose a smaller image.');
                 // Reset the input
                 if (e.target) e.target.value = '';
                 return;
@@ -104,18 +120,28 @@ const CommentForm = memo(({ onSubmit, isSubmitting, error }) => {
         }
     }, []);
 
-    const handleSubmit = useCallback((e) => {
+    const handleSubmit = useCallback(async (e) => {
         e.preventDefault();
-        if (!newComment.trim() || !userName.trim()) return;
+        // Honeypot filled → almost certainly a bot. Pretend success, do nothing.
+        if (honeypot) {
+            setNewComment('');
+            setUserName('');
+            return;
+        }
+        if (cooldown > 0 || !newComment.trim() || !userName.trim()) return;
         
-        onSubmit({ newComment, userName, imageFile });
+        const success = await onSubmit({ newComment, userName, imageFile });
+        if (!success) return;
+
+        localStorage.setItem('lastCommentSubmittedAt', String(Date.now()));
+        setCooldown(COOLDOWN_SECONDS);
         setNewComment('');
         setUserName('');
         setImagePreview(null);
         setImageFile(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    }, [newComment, userName, imageFile, onSubmit]);
+    }, [newComment, userName, honeypot, cooldown, imageFile, onSubmit]);
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -193,16 +219,30 @@ const CommentForm = memo(({ onSubmit, isSubmitting, error }) => {
                                 <span>Choose Profile Photo</span>
                             </button>
                             <p className="text-center text-gray-400 text-sm mt-2">
-                                Max file size: 5MB
+                                Max file size: 2MB
                             </p>
                         </div>
                     )}
                 </div>
             </div>
 
+            {/* Honeypot — hidden from humans, bots fill it and get silently dropped */}
+            <div style={{ position: 'absolute', left: '-9999px', top: '-9999px' }} aria-hidden="true">
+                <label htmlFor="website-honeypot">Website</label>
+                <input
+                    id="website-honeypot"
+                    name="website"
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                />
+            </div>
+
             <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || cooldown > 0}
                 data-aos="fade-up" data-aos-duration="1000"
                 className="relative w-full h-12 bg-gradient-to-r from-[#6366f1] to-[#a855f7] rounded-xl font-medium text-white overflow-hidden group transition-all duration-300 hover:scale-[1.02] hover:shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed"
             >
@@ -213,6 +253,8 @@ const CommentForm = memo(({ onSubmit, isSubmitting, error }) => {
                             <Loader2 className="w-4 h-4 animate-spin" />
                             <span>Posting...</span>
                         </>
+                    ) : cooldown > 0 ? (
+                        <span>Please wait {cooldown}s before posting again</span>
                     ) : (
                         <>
                             <Send className="w-4 h-4" />
@@ -349,9 +391,11 @@ const Komentar = () => {
             if (error) {
                 throw error;
             }
+            return true;
         } catch (error) {
             setError('Failed to post comment. Please try again.');
             console.error('Error adding comment: ', error);
+            return false;
         } finally {
             setIsSubmitting(false);
         }

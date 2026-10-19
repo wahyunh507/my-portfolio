@@ -43,14 +43,18 @@ const InputField = ({ label, value, onChange, placeholder, type = 'text', requir
 
 const emptySkill = () => ({ icon: '', language: '' });
 
-const uploadToStorage = async (file, folder) => {
-  const fileName = `${folder}/${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
-  const { error: uploadError } = await supabase.storage.from(BUCKET).upload(fileName, file, {
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_PDF_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Deterministic paths + upsert keep storage clean (old files are overwritten)
+const uploadToStorage = async (file, path) => {
+  const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
     upsert: true,
     contentType: file.type,
   });
   if (uploadError) throw uploadError;
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(fileName);
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
 };
 
@@ -123,13 +127,18 @@ export default function Settings() {
   const handleProfileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      Swal.fire({ icon: 'warning', title: 'Invalid file', text: 'Please select an image file.', confirmButtonColor: '#6366f1' });
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      Swal.fire({ icon: 'warning', title: 'Invalid file', text: 'Please select a JPEG, PNG, or WebP image.', confirmButtonColor: '#6366f1' });
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      Swal.fire({ icon: 'warning', title: 'File too large', text: 'Profile photo must be under 2MB.', confirmButtonColor: '#6366f1' });
       return;
     }
     setUploadingProfile(true);
     try {
-      const publicUrl = await uploadToStorage(file, 'profile');
+      const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+      const publicUrl = await uploadToStorage(file, `profile/avatar.${ext}`);
       setForm((f) => ({ ...f, profile_image_url: publicUrl }));
       Swal.fire({ icon: 'success', title: 'Photo uploaded', text: 'Click Save Settings to publish.', confirmButtonColor: '#6366f1', timer: 2000, timerProgressBar: true });
     } catch (err) {
@@ -147,9 +156,13 @@ export default function Settings() {
       Swal.fire({ icon: 'warning', title: 'Invalid file', text: 'Please select a PDF file.', confirmButtonColor: '#6366f1' });
       return;
     }
+    if (file.size > MAX_PDF_SIZE) {
+      Swal.fire({ icon: 'warning', title: 'File too large', text: 'CV must be under 5MB.', confirmButtonColor: '#6366f1' });
+      return;
+    }
     setUploadingCv(true);
     try {
-      const publicUrl = await uploadToStorage(file, 'cv');
+      const publicUrl = await uploadToStorage(file, 'cv/CV_Wahyu_Nur_Hidayat.pdf');
       setForm((f) => ({ ...f, cv_url: publicUrl }));
       Swal.fire({ icon: 'success', title: 'CV uploaded', text: 'Click Save Settings to publish.', confirmButtonColor: '#6366f1', timer: 2000, timerProgressBar: true });
     } catch (err) {
@@ -245,11 +258,12 @@ export default function Settings() {
                   )}
                 </div>
                 <label className="flex-1 cursor-pointer">
-                  <input type="file" accept="image/*" onChange={handleProfileUpload} className="hidden" disabled={uploadingProfile} />
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleProfileUpload} className="hidden" disabled={uploadingProfile} />
                   <div className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-white/20 text-sm text-gray-300 hover:border-indigo-500/40 hover:text-white transition-colors">
                     <Upload className="w-4 h-4" />
                     {uploadingProfile ? 'Uploading...' : 'Upload Photo'}
                   </div>
+                  <p className="text-center text-xs text-gray-500 mt-1">JPEG / PNG / WebP · max 2MB</p>
                 </label>
               </div>
               {form.profile_image_url && (
@@ -267,13 +281,14 @@ export default function Settings() {
                   <Upload className="w-4 h-4" />
                   {uploadingCv ? 'Uploading...' : form.cv_url ? 'Replace CV (PDF)' : 'Upload CV (PDF)'}
                 </div>
+                <p className="text-center text-xs text-gray-500 mt-1">PDF · max 5MB</p>
               </label>
               {form.cv_url ? (
                 <a href={form.cv_url} target="_blank" rel="noopener noreferrer" className="text-xs text-indigo-400 hover:text-indigo-300 truncate block">
                   {form.cv_url}
                 </a>
               ) : (
-                <p className="text-xs text-gray-500">No CV uploaded yet. Download button will be hidden on the public site.</p>
+                <p className="text-xs text-gray-500">No CV uploaded yet. The public Download button will show a &quot;CV is being updated&quot; toast.</p>
               )}
             </div>
           </div>

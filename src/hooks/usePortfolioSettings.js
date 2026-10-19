@@ -18,7 +18,7 @@ export const DEFAULT_PORTFOLIO_SETTINGS = {
   email: 'your-email@example.com',
   github_url: 'https://github.com/your-username',
   linkedin_url: 'https://www.linkedin.com/in/your-profile',
-  profile_image_url: '/Photo.jpg',
+  profile_image_url: null,
   cv_url: null,
 };
 

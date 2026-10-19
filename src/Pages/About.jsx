@@ -1,9 +1,44 @@
-import React, { useEffect, useState, memo, useMemo } from "react"
-import { FileText, Code, Award, Globe, ArrowUpRight, Sparkles, UserCheck } from "lucide-react"
+import React, { useEffect, useState, memo, useMemo, useCallback } from "react"
+import { FileText, Code, Award, Globe, ArrowUpRight, Sparkles, ExternalLink } from "lucide-react"
 import AOS from 'aos'
 import 'aos/dist/aos.css'
+import Swal from 'sweetalert2'
 import { usePortfolioSettings } from '../hooks/usePortfolioSettings'
 import SettingsSkeleton from '../components/SettingsSkeleton'
+
+const CV_FILE_NAME = 'CV_Wahyu_Nur_Hidayat.pdf';
+
+// True 1-click download: fetch as blob, trigger object URL download.
+// Falls back to opening in a new tab if the fetch fails (e.g. CORS).
+const downloadCv = async (url) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Fetch failed');
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = CV_FILE_NAME;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};
+
+const notifyCvUnavailable = () => {
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: 'info',
+    title: 'CV is being updated, please check back soon',
+    showConfirmButton: false,
+    timer: 3500,
+    timerProgressBar: true,
+  });
+};
 
 // Memoized Components
 const Header = memo(() => (
@@ -29,36 +64,50 @@ const Header = memo(() => (
   </div>
 ));
 
-const ProfileImage = memo(({ src, loading }) => (
-  <div className="flex justify-end items-center sm:p-12 sm:py-0 sm:pb-0 p-0 py-2 pb-2">
-    <div 
-      className="relative group" 
-      data-aos="fade-up"
-      data-aos-duration="1000"
-    >
-      <div className="absolute -inset-6 opacity-[25%] z-0 hidden sm:block">
-        <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-500 to-purple-600 rounded-full blur-2xl animate-spin-slower" />
-        <div className="absolute inset-0 bg-gradient-to-l from-fuchsia-500 via-rose-500 to-pink-600 rounded-full blur-2xl animate-pulse-slow opacity-50" />
-        <div className="absolute inset-0 bg-gradient-to-t from-blue-600 via-cyan-500 to-teal-400 rounded-full blur-2xl animate-float opacity-50" />
-      </div>
+const ProfileImage = memo(({ src, loading, name }) => {
+  // Clean professional placeholder: initials on a gradient, no old template photo
+  const initials = (name || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('') || 'W';
 
-      <div className="relative">
-        <div className="w-72 h-72 sm:w-80 sm:h-80 rounded-full overflow-hidden shadow-[0_0_40px_rgba(120,119,198,0.3)] transform transition-all duration-700 group-hover:scale-105">
-          <div className="absolute inset-0 border-4 border-white/20 rounded-full z-20 transition-all duration-700 group-hover:border-white/40 group-hover:scale-105" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40 z-10 transition-opacity duration-700 group-hover:opacity-0 hidden sm:block" />
-          <div className="absolute inset-0 bg-gradient-to-t from-purple-500/20 via-transparent to-blue-500/20 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-700 hidden sm:block" />
-          
-          {loading ? (
-            <div className="w-full h-full bg-white/10 animate-pulse" />
-          ) : (
-            <img
-              src={src || '/Photo.jpg'}
-              alt="Profile"
-              className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 group-hover:rotate-2"
-              loading="lazy"
-              onError={(e) => { e.target.src = '/Photo.jpg'; }}
-            />
-          )}
+  return (
+    <div className="flex justify-end items-center sm:p-12 sm:py-0 sm:pb-0 p-0 py-2 pb-2">
+      <div
+        className="relative group"
+        data-aos="fade-up"
+        data-aos-duration="1000"
+      >
+        <div className="absolute -inset-6 opacity-[25%] z-0 hidden sm:block">
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-500 to-purple-600 rounded-full blur-2xl animate-spin-slower" />
+          <div className="absolute inset-0 bg-gradient-to-l from-fuchsia-500 via-rose-500 to-pink-600 rounded-full blur-2xl animate-pulse-slow opacity-50" />
+          <div className="absolute inset-0 bg-gradient-to-t from-blue-600 via-cyan-500 to-teal-400 rounded-full blur-2xl animate-float opacity-50" />
+        </div>
+
+        <div className="relative">
+          <div className="w-72 h-72 sm:w-80 sm:h-80 rounded-full overflow-hidden shadow-[0_0_40px_rgba(120,119,198,0.3)] transform transition-all duration-700 group-hover:scale-105">
+            <div className="absolute inset-0 border-4 border-white/20 rounded-full z-20 transition-all duration-700 group-hover:border-white/40 group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40 z-10 transition-opacity duration-700 group-hover:opacity-0 hidden sm:block" />
+            <div className="absolute inset-0 bg-gradient-to-t from-purple-500/20 via-transparent to-blue-500/20 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-700 hidden sm:block" />
+
+            {loading ? (
+              <div className="w-full h-full bg-white/10 animate-pulse" />
+            ) : src ? (
+              <img
+                src={src}
+                alt="Profile"
+                className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 group-hover:rotate-2"
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#6366f1] to-[#a855f7] transition-transform duration-700 group-hover:scale-110">
+                <span className="text-7xl sm:text-8xl font-bold text-white/90 tracking-wide select-none">
+                  {initials}
+                </span>
+              </div>
+            )}
 
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-all duration-700 z-20 hidden sm:block">
             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent transform -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
@@ -69,7 +118,8 @@ const ProfileImage = memo(({ src, loading }) => (
       </div>
     </div>
   </div>
-));
+  );
+});
 
 const StatCard = memo(({ icon: Icon, color, value, label, description, animation }) => (
   <div data-aos={animation} data-aos-duration={1300} className="relative group">
@@ -117,6 +167,16 @@ const StatCard = memo(({ icon: Icon, color, value, label, description, animation
 
 const AboutPage = () => {
   const { settings, loading } = usePortfolioSettings();
+
+  const handleDownloadCv = useCallback(() => {
+    if (settings.cv_url) downloadCv(settings.cv_url);
+    else notifyCvUnavailable();
+  }, [settings.cv_url]);
+
+  const handlePreviewCv = useCallback(() => {
+    if (settings.cv_url) window.open(settings.cv_url, '_blank', 'noopener,noreferrer');
+    else notifyCvUnavailable();
+  }, [settings.cv_url]);
   const [stats, setStats] = useState({
     totalProjects: 0,
     totalCertificates: 0,
@@ -265,18 +325,27 @@ const AboutPage = () => {
         </blockquote>
       </div>
 
-            <div className="flex flex-col lg:flex-row items-center lg:items-start gap-4 lg:gap-4 lg:px-0 w-full">
-              {settings.cv_url && (
-              <a href={settings.cv_url} target="_blank" rel="noopener noreferrer" download className="w-full lg:w-auto">
-              <button 
+            <div className="flex flex-col sm:flex-row lg:flex-row items-center lg:items-start gap-4 lg:gap-3 lg:px-0 w-full">
+              <button
+                type="button"
+                onClick={handleDownloadCv}
                 data-aos="fade-up"
                 data-aos-duration="800"
-                className="w-full lg:w-auto sm:px-6 py-2 sm:py-3 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white font-medium transition-all duration-300 hover:scale-105 flex items-center justify-center lg:justify-start gap-2 shadow-lg hover:shadow-xl "
+                className="w-full lg:w-auto sm:px-6 py-2 sm:py-3 rounded-lg bg-gradient-to-r from-[#6366f1] to-[#a855f7] text-white font-medium transition-all duration-300 hover:scale-105 flex items-center justify-center lg:justify-start gap-2 shadow-lg hover:shadow-xl"
               >
                 <FileText className="w-4 h-4 sm:w-5 sm:h-5" /> Download CV
               </button>
-              </a>
-              )}
+              <button
+                type="button"
+                onClick={handlePreviewCv}
+                data-aos="fade-up"
+                data-aos-duration="900"
+                aria-label="Preview CV in new tab"
+                title="Preview CV"
+                className="w-full lg:w-auto px-4 py-2 sm:py-3 rounded-lg border border-[#a855f7]/50 text-[#a855f7] font-medium transition-all duration-300 hover:scale-105 flex items-center justify-center lg:justify-center gap-2 hover:bg-[#a855f7]/10"
+              >
+                <ExternalLink className="w-4 h-4 sm:w-5 sm:h-5" /> Preview
+              </button>
               <a href="#Portofolio" className="w-full lg:w-auto">
               <button 
                 data-aos="fade-up"
@@ -289,7 +358,7 @@ const AboutPage = () => {
             </div>
           </div>
 
-          <ProfileImage src={settings.profile_image_url} loading={loading} />
+          <ProfileImage src={settings.profile_image_url} loading={loading} name={settings.hero_title} />
         </div>
 
         <a href="#Portofolio">
